@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>가계부</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#3b3694">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="가계부">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root{--bg:#fafaf8;--cd:#fff;--tx:#1d1d1b;--mu:#6b6b66;--bd:#e2e1dc;--vb:#eeede8;--ac:#3b3694;--hl:#eceafa;--ng:#c0392b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171716;--cd:#222220;--tx:#eeeeea;--mu:#a3a39c;--bd:#3a3a36;--vb:#2c2c29;--ac:#a9a5f2;--hl:#2b2a52;--ng:#ff7b6b}}
+html{color-scheme:light dark}
+body{margin:0 auto;background:var(--bg);color:var(--tx);font:14px/1.5 -apple-system,"Noto Sans KR",sans-serif;padding:12px 12px 110px;max-width:1150px}
+h1{font-size:19px;margin:2px 0;color:var(--ac)}h2{font-size:15px;margin:0 0 2px}.mu{color:var(--mu);font-size:12px}
+.c{background:var(--cd);border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:12px}
+input,select{width:100%;min-width:70px;box-sizing:border-box;padding:5px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font:inherit}
+input[data-m]{text-align:right}th.r,td.r{text-align:right}
+button{border:1px solid var(--bd);background:var(--cd);color:var(--tx);border-radius:6px;padding:5px 9px;cursor:pointer;font:inherit}
+button.p,button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) button.p,:root:not([data-theme="light"]) button.on{color:#171716}}
+.w{overflow-x:auto;margin-top:8px}table{border-collapse:collapse;width:100%;font-size:13px}
+th{background:var(--hl);color:var(--ac);font-weight:600;padding:5px 6px;text-align:left;white-space:nowrap}td{padding:3px;border-bottom:1px solid var(--bd);white-space:nowrap}
+.k{display:flex;gap:18px;flex-wrap:wrap;margin-top:8px}.big{font-size:18px;font-weight:700;color:var(--ac)}.ng{color:var(--ng)}
+.tabs,.chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.mn{display:flex;gap:6px;align-items:center;max-width:320px}
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:8px}label{display:block;font-size:12px;color:var(--mu)}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--cd);border-top:1px solid var(--bd);padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+td+td,th+th{border-left:1px solid var(--vb)}td.gs,th.gs{border-left:1px solid var(--bd)}
+@media(max-width:700px){input,select{font-size:16px}}html{-webkit-text-size-adjust:100%}
+.ro td{color:var(--mu);font-style:italic}
+</style></head><body>
+<h1>가계부</h1><div class="mu">2026-11-03부터 시작 · 금액은 원 단위 · 입력하면 자동 저장됩니다</div>
+<div class="tabs" id="tabs"></div><div id="app"></div>
+<div class="bar"><span class="mu" id="st">불러오는 중…</span><button onclick="doBackup()">📥 백업 저장</button><button onclick="document.getElementById('bf').click()">📤 복원</button><input type="file" id="bf" accept=".json,application/json" style="display:none" onchange="doRestore(this)"><button onclick="doCsv()">📊 엑셀용 CSV</button><button id="rs" onclick="doReset()">🗑 전체 비우기</button></div>
+<script>
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"),won=v=>Math.round(v||0).toLocaleString("ko-KR");
+const B=n=>Array.from({length:n},()=>({})),L=s=>String(s||"").split(",").map(x=>x.trim()).filter(Boolean);
+const DEFC=()=>({v:2,n:1,basic:B(2),accts:B(12),loans:B(6),cats:B(12),plans:B(10),goal:{},sim:{plan:{}},tax:[{},{}],lists:{ab:"입출금,현금,저축,버퍼,결제보관,고정자산,투자,카드,대출,기타부채,기타자산",cb:"고정비,생활 변동비,개인·여가,특별,수입,기타"}});
+const MIN="2026-11",MAX="2030-01",clamp=m=>m<MIN?MIN:m>MAX?MAX:m;
+let D=DEFC(),M={},PM={},TAB="mo",MON=clamp(new Date().toISOString().slice(0,7)),SEL="all",CO=null,loaded=false;
+const named=()=>D.accts.filter(a=>a.name&&a.id),byId=id=>D.accts.find(a=>a.id==id),isDebt=id=>(byId(id)||{}).type=="부채";
+const OS={names:()=>D.basic.map(b=>b.name).filter(Boolean).concat(["공동"]),accts:()=>named().map(a=>a.name),debts:()=>D.accts.filter(a=>a.type=="부채"&&a.name).map(a=>a.name),ab:()=>L(D.lists.ab),cb:()=>L(D.lists.cb),ao:()=>["자산","부채"],yn:()=>["Y","N"],kd:()=>["카드","대출","기타"],ck:()=>["수입","지출"],tx:()=>["일반","제외","해당없음"],pt:()=>["상환","생활비","저축","수입"],hd:()=>["예","아니오"],meth:()=>["원리금균등","원금균등"],sm3:()=>["원리금균등","원금균등","두 방식 비교"],yrs4:()=>["2026","2027","2028","2029"],pay:()=>["일시불","할부","할부수수료","해외이용","대중교통","전통시장","기타제외"]};
+const SEC=[
+{id:"accts",t:"2. 계정 (자산·부채 전체)",h:"가진 계좌·카드·대출을 한 줄씩. 시작잔액은 2026-11-03 기준입니다. 버퍼 용도는 메모에 적어 주세요.",c:[["type","구분","sel","ao"],["grp","묶음","sel","ab"],["name","계정명","text"],["bal","시작잔액(원)","money"],["own","명의","sel","names"],["memo","용도·메모","text"],["use","사용","sel","yn"]]},
+{id:"loans",t:"3. 대출·카드·기타부채 상세",h:"계정에서 구분을 ‘부채’로 적은 계정만 선택할 수 있습니다.",c:[["name","계정명(부채)","sel","debts"],["kind","종류","sel","kd"],["bal","현재 잔액(원)","money"],["rate","연 금리(%)","num"],["pay","월 원리금(원)","money"],["end","종료 예정월","month"],["day","결제·상환일","num"],["limit","카드 한도(원)","money"],["memo","우대조건·메모","text"]]},
+{id:"cats",t:"4. 카테고리 (수입·지출 분류)",h:"대분류 10개 안팎, 소분류는 선택입니다. 카드 공제 제외 여부(할부수수료·해외이용 등)는 거래 입력의 ‘결제구분’에서 지정합니다.",c:[["kind","구분","sel","ck"],["grp","묶음","sel","cb"],["big","대분류","text"],["small","소분류(선택)","text"],["bud","월 예산(원)","money"],["memo","메모","text"]],x:'<button onclick="fillCats()" style="margin-top:6px">✨ 제안안 채우기</button> '}];
+const GOAL=[["buy","목표 구입 시점","month"],["ltv","LTV(%)","num"],["cap","대출 상한(원)","money"],["cost","부대비용(%)","num"],["dep","월세보증금 반환액(원)","money"],["ri","ISA·투자 수익률 가정(%/년)","num"],["rs","예금·파킹 이율 가정(%/년)","num"],["raise","연 소득 인상률 가정(%)","num"],["sink","남는 돈을 받을 계정","sel","accts"]];
+const BAS=[["name","이름(명의)","text"],["sal","세전 연봉(원)","money"],["bon","세전 성과급(연, 원)","money"],["day","급여일(일)","num"],["bm","성과급 지급월(1~12)","num"],["head","세대주","sel","hd"]];
+const CATS=[["지출","고정비","주거비","월세, 공과금, 관리비"],["지출","고정비","보험·통신","보장성 보험, 자동차보험, 통신비"],["지출","고정비","금융비용","대출이자, 할부수수료, 연회비"],["지출","생활 변동비","식비","장보기, 외식·배달, 카페, 점심"],["지출","생활 변동비","생활·쇼핑","생활용품, 쿠팡와우, 가전·가구, 의류·미용"],["지출","생활 변동비","교통·차량","대중교통, 주유, 하이패스, 주차·정비, 세금·과태료"],["지출","생활 변동비","건강","병원·약국, 영양제·마사지, 운동"],["지출","개인·여가","용돈","명의별"],["지출","개인·여가","여가·취미","OTT, 자기계발, 복권, 데이트"],["지출","특별","경조사·이벤트","경조사, 기념일·여행, 이사·행사"],["수입","수입","근로소득","월급, 성과급, 복지비"],["수입","수입","금융소득","이자·캐시백·배당"],["수입","수입","기타수입","환급금, 중고판매, 경조사받음, 보험금"]];
+/* ---------- storage ---------- */
+let dirty=new Set(),tmr;const setSt=s=>{$("st").textContent=s};
+function sched(k){dirty.add(k);try{localStorage.setItem("hf3",JSON.stringify({cfg:D,M,PM}))}catch(e){}clearTimeout(tmr);tmr=setTimeout(flush,700);setSt("저장 중…")}
+async function flush(){dirty.clear();setSt("💾 이 기기에 저장됨 "+new Date().toLocaleTimeString("ko-KR")+backupNote())}
+async function boot(){let cfg=null;
+try{const l=JSON.parse(localStorage.getItem("hf3")||"null");if(l&&l.cfg){cfg=l.cfg;M=l.M||{};PM=l.PM||{}}}catch(e){}
+if(cfg)D=Object.assign(DEFC(),cfg);D.sim=D.sim||{plan:{}};D.sim.plan=D.sim.plan||{};D.tax=D.tax||[{},{}];while(D.tax.length<2)D.tax.push({});
+if(!L(D.lists.ab).includes("현금"))D.lists.ab=D.lists.ab.replace("입출금","입출금,현금");
+D.accts.forEach(a=>{if(a.name&&!a.id)a.id="a"+(D.n++)});
+D.cats=D.cats.flatMap(c=>/,/.test(c.small||"")?c.small.split(",").map(x=>Object.assign({},c,{small:x.trim()})):[c]);
+D.cats.forEach(c=>{if(c.big=="주거·공과")c.big="주거비";if(c.big=="주거비"&&c.small=="전기·가스·수도")c.small="공과금"});D.cats=D.cats.filter(c=>!(c.big=="주거비"&&c.small=="수리"));
+{const sn=new Set();D.cats=D.cats.filter(c=>{if(!c.big&&!c.small)return true;const k=c.kind+"|"+c.big+"|"+c.small;if(sn.has(k))return false;sn.add(k);return true})}
+if(D.plan){const p0=D.plan.r||[];if(p0.length&&!Object.keys(PM).some(k=>(PM[k].r||[]).length)){const key=D.plan.m||clamp(new Date().toISOString().slice(0,7));PM[key]={r:p0};sched("p"+key)}delete D.plan;sched("cfg")}
+Object.values(M).forEach(a=>a.forEach(t=>{if(t.c=="주거·공과")t.c="주거비";if(t.c=="주거비"&&t.s=="전기·가스·수도")t.s="공과금"}));
+if(TAB=="mo"&&!named().length)TAB="cf";
+draw();setSt("💾 이 기기에 저장됨"+backupNote());
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+try{if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{})}catch(e){}}
+
+/* ---------- calc ---------- */
+function eff(t,a){const m=+t.m||0;let r=0;if(t.k=="수입"&&t.a==a)r=m;else if(t.k=="지출"&&t.a==a)r=-m;else if(t.k=="이체"){if(t.a==a)r-=m;if(t.to==a)r+=m}return isDebt(a)?-r:r}
+const sumM=(a,mon)=>(M[mon]||[]).reduce((x,t)=>x+eff(t,a),0);
+function opening(a,mon){const ac=byId(a);let b=+ac.bal||0;Object.keys(M).forEach(k=>{if(k<mon)b+=sumM(a,k)});return b}
+/* ---------- generic inputs ---------- */
+const opt=(list,v)=>'<option value=""></option>'+list.map(x=>`<option ${x==v?"selected":""}>${esc(x)}</option>`).join("")+(v&&!list.includes(v)?`<option selected>${esc(v)}</option>`:"");
+function inp(sec,i,c,v){const[k,l,t,o]=c,d=`data-s="${sec}" data-i="${i}" data-k="${k}"`;
+if(t=="sel")return`<select ${d} data-o="${o}">${opt(OS[o](),v)}</select>`;
+if(t=="money")return`<input inputmode="numeric" ${d} data-m="1" value="${v?Number(v).toLocaleString("ko-KR"):""}">`;
+if(t=="month")return`<input type="month" min="${MIN}" ${d} value="${v||""}">`;
+if(t=="num")return`<input type="number" step="any" ${d} data-n="1" value="${v??""}">`;
+return`<input ${d} value="${esc(v||"")}">`}
+const tbl=(sec,cols,rows)=>`<div class="w"><table><tr>${cols.map(c=>`<th class="${c[2]=="money"?"r":""}">${c[1]}</th>`).join("")}<th></th></tr>${rows.map((r,i)=>`<tr>${cols.map(c=>`<td>${inp(sec,i,c,r[c[0]])}</td>`).join("")}<td><button title="아래에 행 추가" onclick="insR('${sec}',${i})">＋</button> <button title="삭제" onclick="delR('${sec}',${i})">✕</button></td></tr>`).join("")}</table></div>`;
+function drawCf(){let h=`<div class="c"><h2>1. 기본정보</h2><div class="mu">연말정산 계산에 필요한 최소 정보입니다. 월 실수령은 월별 기록에 수입으로 직접 적습니다.</div><div class="w"><table><tr><th></th><th>명의 1</th><th>명의 2</th></tr>${BAS.map(c=>`<tr><th>${c[1]}</th>${[0,1].map(i=>`<td>${inp("basic",i,c,D.basic[i][c[0]])}</td>`).join("")}</tr>`).join("")}</table></div></div>`;
+SEC.forEach(s=>{h+=`<div class="c"><h2>${s.t}</h2><div class="mu">${s.h}</div>${s.id=="accts"?'<div class="k" id="sums"></div>':""}${tbl(s.id,s.c,D[s.id])}<div>${s.x||""}<button onclick="addR('${s.id}')" style="margin-top:6px">+ 맨 아래에 행 추가</button></div></div>`});
+h+=`<div class="c"><h2>드롭다운 목록 편집</h2><div class="mu">쉼표로 구분해서 수정하면 ‘묶음’ 드롭다운에 반영됩니다.</div><div class="g2"><div><label>계정 묶음</label><input data-s="lists" data-k="ab" value="${esc(D.lists.ab)}"></div><div><label>카테고리 묶음</label><input data-s="lists" data-k="cb" value="${esc(D.lists.cb)}"></div></div></div>`;
+$("app").innerHTML=h;sums()}
+function sums(){const e=$("sums");if(!e)return;let a=0,b=0;D.accts.forEach(r=>{const v=+r.bal||0;if(r.type=="자산")a+=v;if(r.type=="부채")b+=v});
+e.innerHTML=`<div><div class="mu">자산 합계</div><div class="big">${won(a)}</div></div><div><div class="mu">부채 합계</div><div class="big">${won(b)}</div></div><div><div class="mu">순자산</div><div class="big ${a-b<0?"ng":""}">${won(a-b)}</div></div>`}
+/* ---------- month nav ---------- */
+function monNav(){return`<div class="mn"><button onclick="mv(-1)">◀</button><input type="month" min="${MIN}" max="${MAX}" value="${MON}" onchange="MON=clamp(this.value||MON);draw()"><button onclick="mv(1)">▶</button></div>`}
+function mv(d){let[y,m]=MON.split("-").map(Number);m+=d;if(m<1){m=12;y--}if(m>12){m=1;y++}MON=clamp(y+"-"+String(m).padStart(2,"0"));draw()}
+/* ---------- monthly ledger ---------- */
+function rowsFor(){const T=M[MON]||[];const r=[];T.forEach((t,i)=>{if(SEL=="all"||t.a==SEL)r.push({i,t});else if(t.k=="이체"&&t.to==SEL)r.push({i,t,m:1})});return r}
+function drawMo(){const ac=named();if(!ac.length){$("app").innerHTML='<div class="c">먼저 ⚙️ 설정에서 계정을 입력해 주세요.</div>';return}
+if(SEL!="all"&&!byId(SEL))SEL="all";
+const chip=(v,l)=>`<button class="${SEL==v?"on":""}" onclick="SEL='${v}';draw()">${esc(l)}</button>`;
+let h=`${planHtml()}<div class="c"><h2>2. 월별 기록</h2>${monNav()}<div class="mu">계좌를 골라 그 통장의 수입·지출·이체를 적습니다. 이체는 출금 계좌에서 적고 상대계정에 입금 계좌를 고르면 양쪽에 반영됩니다. 카드는 사용하면 부채가 늘고, 카드대금은 자산→카드 이체로 적습니다.</div>
+<div class="chips">${chip("all","전체")}${ac.map(a=>chip(a.id,a.name)).join("")}</div>`;
+const rs=rowsFor(),all=SEL=="all",bigs=[...new Set(D.cats.map(c=>c.big).filter(Boolean))];
+h+=`<div class="k" id="msum"></div><div class="w"><table><tr><th>날짜</th><th>구분</th>${all?"<th>계정</th>":""}<th>분류</th><th>소분류</th><th>내용</th><th>결제구분</th><th class="r">금액(원)</th><th>상대계정(이체)</th><th>메모</th>${all?"":'<th class="r">잔액</th>'}<th></th></tr>`;
+const aopt=v=>'<option value=""></option>'+ac.map(a=>`<option value="${a.id}" ${a.id==v?"selected":""}>${esc(a.name)}</option>`).join("");
+rs.forEach(({i,t,m})=>{if(m){const f=byId(t.a);h+=`<tr class="ro"><td>${esc(t.d)}</td><td>이체 입금</td><td>—</td><td>—</td><td>${esc(t.t)}</td><td>—</td><td class="r">${won(t.m)}</td><td>← ${esc(f?f.name:"")}</td><td>${esc(t.n)}</td><td class="r" id="blm${i}"></td><td></td></tr>`;return}
+const d=`data-s="tx" data-i="${i}"`;
+h+=`<tr><td><input type="date" min="2026-11-03" ${d} data-k="d" value="${esc(t.d)}"></td><td><select ${d} data-k="k" data-o="tk">${opt(["수입","지출","이체"],t.k)}</select></td>${all?`<td><select ${d} data-k="a">${aopt(t.a)}</select></td>`:""}<td><select ${d} data-k="c">${opt(bigs,t.c)}</select></td><td><select ${d} data-k="s">${opt(subsFor(t.c),t.s)}</select></td><td><input ${d} data-k="t" value="${esc(t.t)}"></td><td><select ${d} data-k="p" ${t.k=="지출"?"":"disabled"}>${opt(OS.pay(),t.k=="지출"?(t.p||"일시불"):"")}</select></td><td><input inputmode="numeric" data-m="1" ${d} data-k="m" value="${t.m?won(t.m):""}"></td><td><select ${d} data-k="to">${aopt(t.to)}</select></td><td><input ${d} data-k="n" value="${esc(t.n)}"></td>${all?"":`<td class="r" id="bl${i}"></td>`}<td><button title="아래에 거래 추가" onclick="insT(${i})">＋</button> <button onclick="delT(${i})">✕</button></td></tr>`});
+h+=`</table></div><div style="margin-top:8px"><button class="p" onclick="addT()">+ 거래 추가</button> <button onclick="sortT()">날짜순 정렬</button></div></div>`;
+$("app").innerHTML=h;updMo();updPl()}
+function updMo(){const T=M[MON]||[];let inc=0,exp=0;rowsFor().forEach(({t,m})=>{if(m)return;if(t.k=="수입")inc+=+t.m||0;if(t.k=="지출")exp+=+t.m||0});
+const e=$("msum");if(e)e.innerHTML=`<div><div class="mu">${MON} 수입</div><div class="big">${won(inc)}</div></div><div><div class="mu">지출</div><div class="big">${won(exp)}</div></div>`+(SEL!="all"?`<div><div class="mu">월초 잔액</div><div class="big">${won(opening(SEL,MON))}</div></div><div><div class="mu">월말 잔액${isDebt(SEL)?" (부채)":""}</div><div class="big" id="bend"></div></div>`:"");
+if(SEL=="all")return;let b=opening(SEL,MON);rowsFor().forEach(({i,t,m})=>{b+=eff(t,SEL);const c=$("bl"+(m?"m":"")+i);if(c){c.textContent=won(b);c.className="r"+(b<0?" ng":"")}});if($("bend"))$("bend").textContent=won(b)}
+const subsFor=b=>[...new Set(D.cats.filter(c=>c.small&&(!b||c.big==b)).map(c=>c.small))];
+const newT=(p)=>({id:"x"+Date.now()+Math.random().toString(36).slice(2,5),d:p&&p.d||(MON==new Date().toISOString().slice(0,7)?new Date().toISOString().slice(0,10):MON+"-"+(MON=="2026-11"?"03":"01")),k:p&&p.k||"지출",a:p&&p.a||(SEL!="all"?SEL:""),c:"",s:"",t:"",m:"",to:"",n:"",p:"일시불"});
+function addT(){(M[MON]=M[MON]||[]).push(newT());sched(MON);drawMo()}
+function insT(i){const T=M[MON];T.splice(i+1,0,newT(T[i]));sched(MON);drawMo()}
+function delT(i){M[MON].splice(i,1);sched(MON);drawMo()}
+function sortT(){(M[MON]||[]).sort((a,b)=>String(a.d).localeCompare(b.d));sched(MON);drawMo()}
+/* ---------- 월 분할 계획 ---------- */
+const PG=["상환","고정비","생활비","저축","버퍼","결제보관","기타"];let PLO=true;
+let PLM=clamp(new Date().toISOString().slice(0,7));
+function plRows(){if(!PM[PLM])PM[PLM]={};const P=PM[PLM];if(!P.r){let src=null;for(let m=addM(PLM,-1);m>=MIN;m=addM(m,-1)){if(PM[m]&&(PM[m].r||[]).length){src=PM[m].r;break}}P.r=src?JSON.parse(JSON.stringify(src)):[];if(src)sched("p"+PLM)}return P.r}
+const plMv=d=>{PLM=clamp(addM(PLM,d));drawMo()};
+function planHtml(){const R=plRows(),pr=(r,i,inc)=>`<tr>${inc?"":`<td><select data-s="pl" data-i="${i}" data-k="g">${opt(PG,r.g)}</select></td>`}<td><input data-s="pl" data-i="${i}" data-k="n" value="${esc(r.n)}"></td><td><input inputmode="numeric" data-m="1" data-s="pl" data-i="${i}" data-k="a" value="${r.a?won(r.a):""}"></td><td><input data-s="pl" data-i="${i}" data-k="m" value="${esc(r.m)}"></td><td><button title="아래에 행 추가" onclick="plAdd(${i})">＋</button> <button onclick="plDel(${i})">✕</button></td></tr>`;
+const I=R.map((r,i)=>[r,i]).filter(([r])=>r.g=="수입"),V=R.map((r,i)=>[r,i]).filter(([r])=>r.g!="수입");
+return`<div class="c"><details ${PLO?"open":""} ontoggle="PLO=this.open"><summary style="cursor:pointer"><h2 style="display:inline">1. 월별 계획</h2></summary><div class="mu" style="margin-top:4px">계획 달을 고르세요. 아직 계획이 없는 달을 처음 열면 가장 가까운 이전 달 계획이 그대로 복사되어 나타나고, 그 달에서 고친 내용은 이전 달에 영향을 주지 않습니다. 아래 월별 기록의 달과는 별개이며 다른 화면과 연동되지 않습니다.</div>
+<div class="mn" style="margin-top:6px"><button onclick="plMv(-1)">◀</button><input type="month" min="${MIN}" max="${MAX}" data-s="plm" value="${PLM}"><button onclick="plMv(1)">▶</button></div><div class="k" id="plsum"></div>
+<div class="g2" style="align-items:start;margin-top:8px"><div><b>수입</b><div class="w"><table><tr><th>항목</th><th class="r">금액(원)</th><th>메모</th><th></th></tr>${I.map(([r,i])=>pr(r,i,1)).join("")}</table></div><button onclick="plNew('수입')" style="margin-top:6px">+ 수입 추가</button></div>
+<div><b>분할</b><div class="w"><table><tr><th>구분</th><th>항목</th><th class="r">금액(원)</th><th>메모</th><th></th></tr>${V.map(([r,i])=>pr(r,i,0)).join("")}</table></div><button onclick="plNew('생활비')" style="margin-top:6px">+ 분할 추가</button></div></div></details></div>`}
+function updPl(){const e=$("plsum");if(!e)return;const R=plRows(),S=f=>R.filter(r=>f(r.g)).reduce((x,r)=>x+(+r.a||0),0),I=S(g=>g=="수입"),V=S(g=>g!="수입"),d=I-V;
+e.innerHTML=`<div><div class="mu">수입 합계</div><div class="big">${won(I)}</div></div><div><div class="mu">분할 합계</div><div class="big ${V>I?"ng":""}">${won(V)}</div></div><div><div class="mu">${d<0?"수입 초과":"남음"}</div><div class="big ${d<0?"ng":""}">${won(Math.abs(d))}</div></div><div class="mu" style="align-self:end">${PG.map(g=>{const v=R.filter(r=>r.g==g).reduce((x,r)=>x+(+r.a||0),0);return v?g+" "+won(v):""}).filter(Boolean).join(" · ")}</div>`}
+function plAdd(i){const R=plRows();R.splice(i+1,0,{g:R[i].g,n:"",a:"",m:""});sched("p"+PLM);drawMo()}
+function plDel(i){plRows().splice(i,1);sched("p"+PLM);drawMo()}
+function plNew(g){plRows().push({g,n:"",a:"",m:""});sched("p"+PLM);drawMo()}
+/* ---------- balances ---------- */
+function drawAs(){let h=`<div class="c"><h2>자산현황</h2>${monNav()}<div class="mu">기록한 거래로 자동 계산됩니다. 월말 기준.</div>`;
+const rows=named().map(a=>{const o=opening(a.id,MON),ch=sumM(a.id,MON);return{a,o,ch,e:o+ch}});let A=0,Bd=0,Sv=0;
+const sec=(ty)=>{const rs=rows.filter(r=>r.a.type==ty);return`<h3 style="margin:10px 0 0">${ty}</h3><div class="w"><table><tr><th>계정</th><th>묶음</th><th class="r">월초</th><th class="r">증감</th><th class="r">월말</th></tr>${rs.map(r=>`<tr><td>${esc(r.a.name)}</td><td>${esc(r.a.grp)}</td><td class="r">${won(r.o)}</td><td class="r">${r.ch>=0?"+":""}${won(r.ch)}</td><td class="r"><b>${won(r.e)}</b></td></tr>`).join("")}</table></div>`};
+rows.forEach(r=>{if(r.a.type=="자산"){A+=r.e;if(r.a.grp=="저축")Sv+=r.e}if(r.a.type=="부채")Bd+=r.e});
+h+=`<div class="k"><div><div class="mu">자산</div><div class="big">${won(A)}</div></div><div><div class="mu">부채</div><div class="big">${won(Bd)}</div></div><div><div class="mu">순자산</div><div class="big ${A-Bd<0?"ng":""}">${won(A-Bd)}</div></div><div><div class="mu">저축 묶음 합계(버퍼 제외)</div><div class="big">${won(Sv)}</div></div></div>${sec("자산")}${sec("부채")}</div>`;
+$("app").innerHTML=h}
+/* ---------- simulation ---------- */
+const MS=(()=>{const a=[];let y=2026,m=11;for(;;){const s=y+"-"+String(m).padStart(2,"0");if(s>MAX)break;a.push(s);if(++m>12){m=1;y++}}return a})();
+const gv=(k,d)=>{const v=D.goal[k];return v===""||v==null?d:+v};
+const pmt=(P,r,n,me)=>{r/=1200;n*=12;if(P<=0)return 0;return me=="원금균등"?P/n+P*r:(r?P*r/(1-Math.pow(1+r,-n)):P/n)};
+const tint=(P,r,n,me)=>{if(P<=0)return 0;const rr=r/1200,nn=n*12;return me=="원금균등"?P*rr*(nn+1)/2:pmt(P,r,n,me)*nn-P};
+function price(eq){const L=gv("ltv",70)/100,C=gv("cost",3.6)/100,cap=gv("cap",600000000);if(eq<=0)return{P:0,ln:0};let P=eq/(1-L+C);if(P*L>cap)P=(eq+cap)/(1+C);return{P,ln:Math.min(P*L,cap)}}
+const needEq=t=>{const L=gv("ltv",70)/100,C=gv("cost",3.6)/100,cap=gv("cap",600000000);return t*(1+C)-Math.min(t*L,cap)};
+function ginp(k,l,t,ph,o){const v=D.goal[k],d=`data-s="goal" data-i="0" data-k="${k}"`;let h;
+if(t=="sel")h=`<select ${d} data-o="${o}">${opt(OS[o](),v||OS[o]()[0])}</select>`;
+else if(t=="money")h=`<input inputmode="numeric" ${d} data-m="1" placeholder="${ph||""}" value="${v?Number(v).toLocaleString("ko-KR"):""}">`;
+else if(t=="month")h=`<input type="month" min="${MIN}" max="${MAX}" ${d} value="${v||""}">`;
+else h=`<input type="number" step="any" ${d} data-n="1" placeholder="${ph||""}" value="${v??""}">`;
+return`<div><label>${l}</label>${h}</div>`}
+function drawSm(){const cur=new Date().toISOString().slice(0,7);
+let h=`<div class="c"><h2>주담대 시뮬레이터 (저축 · 대출)</h2><div class="mu">계획: 매달 목표 저축액을 직접 적습니다(전 기간). 실제: 월별 기록의 저축 증감이 지난 달부터 자동으로 들어옵니다. 전망: 지난 달은 실제, 이번 달 이후는 계획으로 이어서 계산합니다. ‘저축’은 묶음이 저축인 자산(버퍼·비상금 제외)입니다.</div>
+<div class="g2">${ginp("tgt","목표 집값(원)","money")}${ginp("buy","목표 구입 시점","month")}${ginp("ltv","LTV(%)","num","70")}${ginp("cap","대출 상한(원)","money","600,000,000")}${ginp("cost","부대비용(%)","num","3.6")}${ginp("dep","보증금 반환액(원)","money")}${ginp("debt","차용금 등 상환액(원)","money","기타부채 시작잔액 합")}${ginp("rate","대출 금리(%)","num","4")}${ginp("yrs","만기(년)","num","30")}${ginp("stress","DSR 스트레스 가산(%p)","num","1.5")}${ginp("meth","상환방식","sel","","meth")}</div>
+<div class="g2" style="margin-top:12px"><div><label>계획 일괄 채우기: 시작월</label><input type="month" id="pf" min="${MIN}" max="${MAX}" value="${MIN}"></div><div><label>끝나는 월</label><input type="month" id="pt" min="${MIN}" max="${MAX}" value="${MAX}"></div><div><label>월 목표 금액(원)</label><input inputmode="numeric" data-m="1" id="pa" oninput="fmtI(this)"></div><div><label>&nbsp;</label><button onclick="fillPlan()">채우기</button></div></div>
+<div class="k" id="smsum"></div><div id="smch" style="margin-top:8px"></div></div>
+<div class="c"><div class="w" style="max-height:600px;overflow:auto"><table><tr><th rowspan="2">월</th><th colspan="6" class="gs" style="text-align:center">저축</th><th colspan="6" class="gs" style="text-align:center">그 달에 목표 집값으로 구입한다면 (전망 기준)</th></tr><tr><th class="r gs">계획 입금(입력)</th><th class="r">계획 누적</th><th class="r">실제 입금</th><th class="r">실제 누적</th><th class="r">전망 누적</th><th class="r">전망−계획</th><th class="r gs">자기자금</th><th class="r">대출 한도(LTV·상한)</th><th class="r">필요 대출액</th><th class="r">가능 여부</th><th class="r">월 원리금</th><th class="r">DSR</th></tr>
+${MS.map((m,j)=>{const v=+D.sim.plan[m]||0;return`<tr style="${m==cur?"background:var(--hl)":""}"><td>${m}${m==cur?" (이번 달)":""}</td><td class="gs"><input inputmode="numeric" data-m="1" data-s="plan" data-i="0" data-k="${m}" value="${v?won(v):""}"></td>${["pc","ac","au","fc","df","eq","lm","nd","ok","pm","ds"].map(x=>`<td class="r" id="${x}${j}"></td>`).join("")}</tr>`}).join("")}</table></div>
+<div class="mu" style="margin-top:6px">DSR = (스트레스 가산 금리로 계산한 연 원리금) ÷ 기본정보의 연소득(연봉+성과급, 세전). 40% 초과 시 빨간색입니다. 대출 한도 = min(목표 집값 × LTV, 규제 상한 · 기본 6억), 필요 대출액 = 목표 집값 + 부대비용 − 자기자금(0 이상). 규제 수치는 바뀔 수 있어 입력값으로 두었습니다.</div></div>
+<div class="c"><h2>금리 민감도 (목표 구입 시점 기준)</h2><div id="smsens" class="w"></div></div>
+<div class="c"><h2>상환 스케줄</h2><div class="mu">대출액은 목표 구입 시점의 ‘필요 대출액’(규제 상한 반영)을 자동으로 가져오며, 직접 입력하면 그 금액을 씁니다. 상환은 구입 다음 달부터 시작한다고 가정합니다.</div><div class="g2">${ginp("smeth","상환방식 보기","sel","","sm3")}${ginp("sloan","대출액 직접 입력(원)","money","자동")}</div><div id="schsum" style="margin-top:8px"></div><div id="schtab"></div></div>`;
+$("app").innerHTML=h;updSm()}
+function fillPlan(){const f=$("pf").value,t=$("pt").value,a=+$("pa").value.replace(/,/g,"")||0;MS.forEach(m=>{if(m>=f&&m<=t)D.sim.plan[m]=a});sched("cfg");drawSm()}
+let SMEQ=0,SO={},SALL=false;
+const addM=(s,d)=>{const[y,m]=s.split("-").map(Number),t=y*12+m-1+d;return Math.floor(t/12)+"-"+String(t%12+1).padStart(2,"0")};
+function borrowAt(eq,t){if(!t)return price(eq).ln;const L=gv("ltv",70)/100,C=gv("cost",3.6)/100,cap=gv("cap",600000000);return Math.min(Math.max(0,t*(1+C)-eq),Math.min(t*L,cap))}
+function mkSch(P,rate,yrs,me){const n=Math.round(yrs*12),r=rate/1200,pm=pmt(P,rate,yrs,"원리금균등"),R=[];let b=P,cp=0,ci=0,ct=0;for(let k=1;k<=n;k++){const it=b*r;let pr=me=="원금균등"?P/n:pm-it;if(k==n)pr=b;const pay=pr+it;b-=pr;cp+=pr;ci+=it;ct+=pay;R.push({k,pay,pr,it,bal:Math.max(0,b),cp,ci,ct})}return R}
+function getSch(){const rate=gv("rate",4),yrs=gv("yrs",30),me=D.goal.smeth||"원리금균등",P=gv("sloan",0)>0?gv("sloan",0):borrowAt(SMEQ,gv("tgt",0));if(!(P>0))return null;const ms=me=="두 방식 비교"?["원리금균등","원금균등"]:[me];return{P,ms,R:ms.map(m=>mkSch(P,rate,yrs,m)),start:addM(D.goal.buy||MAX,1)}}
+function drawSch(){const e=$("schsum");if(!e)return;const sc=getSch();if(!sc){e.innerHTML="";$("schtab").innerHTML='<div class="mu">대출액이 0원입니다. 목표 집값을 입력하거나 대출액을 직접 입력해 주세요.</div>';return}
+const{P,ms,R,start}=sc,n=R[0].length,cmp=ms.length==2;
+const st=R.map(r=>({it:r[n-1].ci,tot:r[n-1].ct,f:r[0].pay,l:r[n-1].pay,av:r[n-1].ct/n}));
+let cross=0;if(cmp)for(let k=0;k<n;k++)if(R[1][k].pay<R[0][k].pay){cross=k+1;break}
+const lab=["대출액","총 원금","총 이자","총 상환액 (도합)","첫 달 납입","마지막 달 납입","평균 월 납입","이자 ÷ 원금"];
+const val=s=>[P,P,s.it,s.tot,s.f,s.l,s.av,(s.it/P*100).toFixed(1)+"%"].map((v,i)=>i==7?v:won(v));
+const dif=cmp?[0,0,st[0].it-st[1].it,st[0].tot-st[1].tot,st[0].f-st[1].f,st[0].l-st[1].l,st[0].av-st[1].av]:[];
+let h=`<div class="w"><table><tr><th></th>${ms.map(m=>`<th class="r gs">${m}</th>`).join("")}${cmp?'<th class="r gs">차이(균등−원금균등)</th>':""}</tr>`+lab.map((l,i)=>`<tr><td>${l}</td>${st.map(s=>`<td class="r gs">${val(s)[i]}</td>`).join("")}${cmp?`<td class="r gs">${i>=2&&i<=6?won(dif[i]):""}</td>`:""}</tr>`).join("")+"</table></div>";
+if(cmp)h+=`<div class="mu" style="margin-top:4px">${cross?`원금균등의 월 납입액이 ${cross}회차(${addM(start,cross-1)})부터 원리금균등보다 적어집니다. (표의 ★)`:"월 납입액이 역전되지 않습니다."}</div>`;
+e.innerHTML=h;
+const cell=r=>[r.pay,r.pr,r.it,r.bal,r.cp,r.ci,r.ct].map((v,j)=>`<td class="r${j?"":" gs"}">${won(v)}</td>`).join("");
+const hd=()=>["납입액","원금","이자","잔여 원금","누적 원금","누적 이자","누적 납입"].map((x,j)=>`<th class="r${j?"":" gs"}">${x}</th>`).join("");
+let t=`<div style="margin:8px 0"><button onclick="SALL=!SALL;SO={};drawSch()">${SALL?"전체 접기":"전체 펼치기"}</button> <span class="mu">연도 줄을 누르면 그 해의 월별 상세가 펼쳐집니다. 상환 시작 ${start}</span></div><div class="w" style="max-height:560px;overflow:auto"><table><tr><th rowspan="2">회차 / 연·월</th>${ms.map(m=>`<th colspan="7" class="gs" style="text-align:center">${m}</th>`).join("")}${cmp?'<th rowspan="2" class="r gs">납입 차이</th>':""}</tr><tr>${ms.map(hd).join("")}</tr>`;
+const G=[];for(let k=0;k<n;k++){const y=addM(start,k).slice(0,4);if(!G.length||G[G.length-1].y!=y)G.push({y,a:k,b:k});G[G.length-1].b=k}
+G.forEach(g=>{const open=SALL||SO[g.y];
+const agg=R.map(r=>{let pay=0,pr=0,it=0;for(let k=g.a;k<=g.b;k++){pay+=r[k].pay;pr+=r[k].pr;it+=r[k].it}const l=r[g.b];return{pay,pr,it,bal:l.bal,cp:l.cp,ci:l.ci,ct:l.ct}});
+t+=`<tr class="hl" style="cursor:pointer" onclick="SO['${g.y}']=!SO['${g.y}'];drawSch()"><td>${open?"▼":"▶"} ${g.y}년 (${g.b-g.a+1}회)</td>${agg.map(cell).join("")}${cmp?`<td class="r gs">${won(agg[0].pay-agg[1].pay)}</td>`:""}</tr>`;
+if(open)for(let k=g.a;k<=g.b;k++)t+=`<tr><td>${k+1}회 · ${addM(start,k)}${k+1==cross?" ★":""}</td>${R.map(r=>cell(r[k])).join("")}${cmp?`<td class="r gs">${won(R[0][k].pay-R[1][k].pay)}</td>`:""}</tr>`});
+const tot=R.map(r=>({pay:r[n-1].ct,pr:P,it:r[n-1].ci,bal:0,cp:r[n-1].cp,ci:r[n-1].ci,ct:r[n-1].ct}));
+t+=`<tr class="hl"><td>합계</td>${tot.map(cell).join("")}${cmp?`<td class="r gs">${won(tot[0].pay-tot[1].pay)}</td>`:""}</tr></table></div>`;
+$("schtab").innerHTML=t}
+function updSm(){const cur=new Date().toISOString().slice(0,7),sv=named().filter(a=>a.type=="자산"&&a.grp=="저축"),st=sv.reduce((x,a)=>x+(+a.bal||0),0);
+const rate=gv("rate",4),yrs=gv("yrs",30),me=D.goal.meth||"원리금균등",dep=gv("dep",0),debt=gv("debt",D.accts.filter(a=>a.grp=="기타부채").reduce((x,a)=>x+(+a.bal||0),0)),stress=gv("stress",1.5),inc=D.basic.reduce((x,b)=>x+(+b.sal||0)+(+b.bon||0),0),tgt=gv("tgt",0);
+let pc=st,au=st,fc=st,hitP=null,hitF=null;const S={p:[],a:[],f:[]};
+const set=(id,v,ng)=>{const e=$(id);if(e){e.textContent=v;e.className="r"+(id.slice(0,2)=="eq"?" gs":"")+(ng?" ng":"")}};
+MS.forEach((m,j)=>{const p=+D.sim.plan[m]||0;pc+=p;const sh=m<=cur,a=sh?sv.reduce((x,s)=>x+sumM(s.id,m),0):0;if(sh)au+=a;const f=m<cur?a:(m==cur?Math.max(a,p):p);fc+=f;
+const eq=fc+dep-debt,pr=price(eq),Lr=gv("ltv",70)/100,Cr=gv("cost",3.6)/100,cp=gv("cap",600000000),lim=tgt?Math.min(tgt*Lr,cp):0,nd=tgt?Math.max(0,tgt*(1+Cr)-eq):0,bw=tgt?Math.min(nd,lim):0,sh2=nd-lim,ds=inc?pmt(bw,rate+stress,yrs,me)*12/inc:0;
+set("pc"+j,won(pc));set("ac"+j,sh?won(a):"–");set("au"+j,sh?won(au):"–");set("fc"+j,won(fc));set("df"+j,(fc-pc>=0?"+":"")+won(fc-pc),fc-pc<0);
+set("eq"+j,won(eq),eq<0);set("lm"+j,tgt?won(lim):"목표 집값 입력");set("nd"+j,tgt?won(nd):"–");set("ok"+j,tgt?(sh2>0?"부족 "+won(sh2):"가능"):"–",tgt&&sh2>0);set("pm"+j,tgt?won(pmt(bw,rate,yrs,me)):"–");set("ds"+j,tgt&&inc?(ds*100).toFixed(1)+"%":"–",ds>.4);
+if(tgt){if(hitP==null&&price(pc+dep-debt).P>=tgt)hitP=m;if(hitF==null&&pr.P>=tgt)hitF=m}
+S.p.push(pc);S.f.push(fc);S.a.push(sh?au:null)});
+const bi=Math.max(0,MS.indexOf(D.goal.buy||MAX)),eqB=S.f[bi]+dep-debt,la=[...S.a].reverse().find(v=>v!=null);
+let h=`<div><div class="mu">현재 저축 합계(실제)</div><div class="big">${won(la??st)}</div></div><div><div class="mu">${MS[bi]} 전망 저축</div><div class="big">${won(S.f[bi])}</div></div><div><div class="mu">${MS[bi]} 가능 집값(전망)</div><div class="big">${won(price(eqB).P)}</div></div>`;
+if(tgt){const need=needEq(tgt),gap=need-eqB,rem=MS.filter(x=>x>cur&&x<=MS[bi]).length;
+h+=`<div><div class="mu">목표 ${won(tgt)} 도달 월</div><div class="big" style="font-size:15px">계획 ${hitP||"미도달"} / 전망 ${hitF||"미도달"}</div></div><div><div class="mu">${MS[bi]}까지 부족액${gap>0&&rem>0?" · 월 추가 저축 필요":""}</div><div class="big ${gap>0?"ng":""}">${gap>0?won(gap)+(rem>0?" · "+won(gap/rem):""):"충족"}</div></div>`}
+$("smsum").innerHTML=h;
+const W=700,H=200,pd=44,mx=Math.max(...S.p,...S.f,1),X=i=>pd+i*(W-pd-10)/(MS.length-1),Y=v=>H-22-(v/mx)*(H-44);
+const pa=arr=>arr.map((v,i)=>v==null?"":(i&&arr[i-1]!=null?"L":"M")+X(i).toFixed(1)+" "+Y(v).toFixed(1)).join("");
+$("smch").innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="color:var(--tx)"><path d="${pa(S.p)}" fill="none" stroke="currentColor" opacity=".45" stroke-dasharray="5 4"/><path d="${pa(S.f)}" fill="none" style="stroke:var(--ac)" stroke-width="2" opacity=".5"/><path d="${pa(S.a)}" fill="none" style="stroke:var(--ac)" stroke-width="3"/>${tgt?`<line x1="${pd}" x2="${W-10}" y1="${Y(Math.min(needEq(tgt),mx))}" y2="${Y(Math.min(needEq(tgt),mx))}" stroke="#c0392b" stroke-dasharray="2 3"/>`:""}<text x="2" y="${Y(mx)+4}" font-size="10" fill="currentColor">${(mx/1e8).toFixed(1)}억</text><text x="2" y="${Y(0)+4}" font-size="10" fill="currentColor">0</text><text x="${pd}" y="${H-4}" font-size="10" fill="currentColor">${MS[0]}</text><text x="${W-48}" y="${H-4}" font-size="10" fill="currentColor">${MS[MS.length-1]}</text></svg><div class="mu">┅ 계획 누적 · <span style="color:var(--ac)">━</span> 실제 누적(진하게) · 전망 누적(연하게)${tgt?" · 붉은 점선: 목표 집값에 필요한 자기자금":""}</div>`;
+const ln=borrowAt(eqB,tgt),rs=[rate-1,rate,rate+1].filter(r=>r>0);
+$("smsens").innerHTML=ln>0?`<table><tr><th>금리</th><th class="r">월 원리금(첫 달)</th><th class="r">총 이자(만기까지)</th></tr>${rs.map(r=>`<tr><td>${r.toFixed(1)}%${r==rate?" (기준)":""}</td><td class="r">${won(pmt(ln,r,yrs,me))}</td><td class="r">${won(tint(ln,r,yrs,me))}</td></tr>`).join("")}</table><div class="mu" style="margin-top:4px">대출액 ${won(ln)}원 · ${yrs}년 · ${me}</div>`:'<div class="mu">자기자금이 없어 대출액이 계산되지 않습니다.</div>';SMEQ=eqB;drawSch();
+}
+/* ---------- 연말정산 시뮬레이터 ---------- */
+function rate(S){const w=S<=500?S*.7:S<=1500?350+(S-500)*.4:S<=4500?750+(S-1500)*.15:S<=10000?1200+(S-4500)*.05:1475+(S-10000)*.02;
+const t=S-w-150-Math.min(S*.045,344)-S*.049;for(const[l,r]of[[1400,.06],[5000,.15],[8800,.24],[15000,.35],[30000,.38],[50000,.4],[100000,.42]])if(t<=l)return r;return .45}
+const TXF=[["cr","신용카드 월 사용액"],["ck","체크카드 월 사용액"],["cs","현금영수증 월 사용액"],["tr","대중교통 월 사용액"],["mk","전통시장 월 사용액"],["rent","월세(월)"],["pen","연금저축·IRP 월 납입"],["isa","ISA 월 납입"],["ret","ISA 만기 후 연금계좌 이전액(연)"]];
+const FL=["cr","ck","cs","tr","mk","rent","pen","isa"],FN={cr:"신용카드",ck:"체크카드",cs:"현금영수증",tr:"대중교통",mk:"전통시장",rent:"월세",pen:"연금저축·IRP",isa:"ISA 납입"};
+const txName=i=>D.basic[i].name||("명의 "+(i+1));
+function drawTx(){$("app").innerHTML=`<div class="c"><h2>연말정산 시뮬레이터 (ISA 저축 포함)</h2><div class="mu">아래 칸의 숫자는 <b>내가 정한 계획</b>이며 거래 기록으로 덮어쓰지 않습니다. 월 금액을 넣으면 연 환산해 환급액을 계산하고, 바로 아래 ‘실제 기록과 비교’가 월별 기록을 실시간으로 불러와 계획과 맞춰 보여줍니다. 총급여와 세대주는 설정의 기본정보를 사용합니다.</div>
+<div class="g2">${ginp("txy","귀속연도","sel","","yrs4")}${ginp("isy","ISA 유지 기간(년)","num","3")}${ginp("ri","ISA 수익률 가정(%/년)","num","4")}</div>
+<div class="g2" style="margin-top:12px">${[0,1].map(i=>`<div><b>${esc(txName(i))} · 계획 입력</b>${TXF.map(f=>`<div style="margin-top:4px"><label>${f[1]}</label>${inp("tax",i,[f[0],f[1],"money"],D.tax[i][f[0]])}</div>`).join("")}</div>`).join("")}</div></div>
+<div class="c"><h2>실제 기록과 비교</h2><div id="txcmp" class="w"></div></div><div class="c"><h2>예상 결과 (계획 vs 전망)</h2><div id="txres"></div></div>`;updTx()}
+function actTx(y){const ks=Object.keys(M).filter(k=>k.startsWith(y+"-")&&(M[k]||[]).length).sort(),nm=D.basic.map(b=>b.name),Z=()=>({cr:0,ck:0,cs:0,tr:0,mk:0,rent:0,pen:0,isa:0}),T=[Z(),Z()];
+ks.forEach(k=>M[k].forEach(t=>{const m=+t.m||0,a=byId(t.a),b=byId(t.to),ib=b?nm.indexOf(b.own):-1;let ia=a?nm.indexOf(a.own):-1;if(ia<0&&t.k=="지출"&&/월세/.test(t.s||"")){const hh=D.basic.findIndex(x=>x.head=="예");if(hh>=0)ia=hh}
+if(t.k=="지출"&&a&&ia>=0){const p=t.p||"",s=t.s||"";if(/수수료|해외|제외/.test(p))return;
+if(/월세/.test(s))T[ia].rent+=m;else if(p=="대중교통"||/대중교통/.test(s))T[ia].tr+=m;else if(p=="전통시장"||/전통시장/.test(s))T[ia].mk+=m;
+else if(a.type=="부채"&&a.grp=="카드")T[ia].cr+=m;else if(/체크/.test(a.name))T[ia].ck+=m;else if(a.grp=="현금"||/현금/.test(a.name))T[ia].cs+=m}
+if(t.k=="이체"&&b&&ib>=0){if(/ISA/i.test(b.name))T[ib].isa+=m;else if(/연금|IRP/i.test(b.name))T[ib].pen+=m}}));
+return{ks,k:ks.length,T}}
+function txCalc(i,A){const b=D.basic[i],S=((+b.sal||0)+(+b.bon||0))/1e4,mo=k=>(+A[k]||0)/1e4;
+const am={신용:mo("cr"),체크:mo("ck"),현금영수증:mo("cs"),전통시장:mo("mk"),대중교통:mo("tr")};
+let Rm=S*.25,X=0,B=0;[["신용",.15],["체크",.3],["현금영수증",.3],["전통시장",.4],["대중교통",.4]].forEach(([t,x],j)=>{const o=Math.max(0,am[t]-Rm);Rm=Math.max(0,Rm-am[t]);if(j<3)X+=o*x;else B+=o*x});
+const base=S<=7000?300:S<=12000?250:200,ded=Math.min(X+B,base+Math.min(B,200)),mr=rate(S),card=S?ded*mr*1.1:0;
+const pc=Math.min(mo("pen"),900)*(S<=5500?.165:.132),rent=mo("rent"),rc=(b.head=="예"&&S<=8000)?Math.min(rent,1000)*(S<=5500?.17:.15):0,ic=Math.min(mo("ret")*.1,300);
+const i2=Math.pow(1+gv("ri",4)/100,1/12)-1,n=Math.round(gv("isy",3)*12),m=(+A.isa||0)/12,fv=m?(i2?m*(Math.pow(1+i2,n)-1)/i2:m*n):0,pr=m*n,pf=fv-pr,ex=S<=5000?4000000:2000000,t1=Math.max(0,pf-ex)*.099,t2=pf*.154;
+return{S,thr:S*.25,use:Object.values(am).reduce((x,y)=>x+y,0),am,ded,mr,card,pc,rc,ic,pen:mo("pen"),rent,head:b.head,tot:card+pc+rc+ic,I:{m,n,fv,pr,pf,ex,t1,t2}}}
+function updTx(){const e=$("txres");if(!e)return;const f=v=>won(v*1e4),y=String(gv("txy",2027)),ac=actTx(y),k=ac.k;
+const plan=i=>{const A={ret:+D.tax[i].ret||0};FL.forEach(x=>A[x]=(+D.tax[i][x]||0)*12);return A};
+const fore=i=>{const A={ret:+D.tax[i].ret||0};FL.forEach(x=>A[x]=ac.T[i][x]+(+D.tax[i][x]||0)*(12-k));return A};
+const RP=[0,1].map(i=>txCalc(i,plan(i))),RF=[0,1].map(i=>txCalc(i,fore(i)));
+/* 비교표 */
+let c;if(!k)c=`<div class="mu">${y}년 거래 기록이 아직 없습니다. 월별 기록을 입력하면 이 표에 실시간으로 나타납니다.</div>`;
+else{c=`<div class="mu">기록된 달: ${ac.ks.join(", ")} (${k}개월). 계획은 같은 기간 기준(월 계획 × ${k})입니다. 지출은 계획보다 많으면, 저축은 계획보다 적으면 빨간색입니다. 월세는 소분류가 ‘월세’인 지출을 출금 계정 명의(공동 계정이면 세대주) 기준으로 집계합니다.</div><table><tr><th rowspan="2">항목</th>${[0,1].map(i=>`<th colspan="3" class="gs" style="text-align:center">${esc(txName(i))}</th>`).join("")}</tr><tr>${[0,1].map(()=>'<th class="r gs">계획</th><th class="r">실제</th><th class="r">차이</th>').join("")}</tr>`+
+FL.map(x=>`<tr><td>${FN[x]}</td>${[0,1].map(i=>{const p=(+D.tax[i][x]||0)*k,a=ac.T[i][x],d=a-p,bad=(x=="pen"||x=="isa")?d<0:d>0;return`<td class="r gs">${won(p)}</td><td class="r">${won(a)}</td><td class="r ${bad&&d!=0?"ng":""}">${d>0?"+":""}${won(d)}</td>`}).join("")}</tr>`).join("")+"</table>"}
+$("txcmp").innerHTML=c;
+/* 결과표 */
+const rows=[["총급여 (연봉+성과급)",r=>f(r.S)],["카드 공제 문턱 (25%)",r=>f(r.thr)],["연 사용 합계",r=>f(r.use)],["카드 소득공제액",r=>f(r.ded)],["한계세율",r=>(r.mr*100)+"%"],["카드 환급",r=>f(r.card)],["연금저축·IRP 세액공제",r=>f(r.pc)],["월세 세액공제",r=>f(r.rc)],["ISA 만기 후 연금이전 세액공제",r=>f(r.ic)],["합계",r=>"<b>"+f(r.tot)+"</b>"]];
+const tp=RP[0].tot+RP[1].tot,tf=RF[0].tot+RF[1].tot;
+let h=`<div class="k"><div><div class="mu">부부 합계 환급 · 계획</div><div class="big">${f(tp)}</div></div><div><div class="mu">전망 (실제 ${k}개월 + 남은 달 계획)</div><div class="big">${f(tf)}</div></div><div><div class="mu">전망 − 계획</div><div class="big ${tf-tp<0?"ng":""}">${tf-tp>=0?"+":""}${f(tf-tp)}</div></div></div>`;
+h+=`<div class="w"><table><tr><th rowspan="2"></th>${[0,1].map(i=>`<th colspan="2" class="gs" style="text-align:center">${esc(txName(i))}</th>`).join("")}</tr><tr>${[0,1].map(()=>'<th class="r gs">계획</th><th class="r">전망</th>').join("")}</tr>${rows.map(([l,g])=>`<tr><td>${l}</td>${[0,1].map(i=>`<td class="r gs">${g(RP[i])}</td><td class="r">${g(RF[i])}</td>`).join("")}</tr>`).join("")}</table></div>`;
+let tips="";RF.forEach((r,i)=>{const n=esc(txName(i));
+if(r.S&&r.use<r.thr)tips+=`<div class="mu">${n}: 전망 사용액이 문턱보다 ${f(r.thr-r.use)} 모자라 카드 공제가 0원입니다. 이 구간은 혜택 좋은 신용카드를 쓰세요.</div>`;
+if(r.am.신용>r.thr)tips+=`<div class="mu">${n}: 문턱을 넘긴 신용카드 ${f(r.am.신용-r.thr)}을 체크·현금영수증으로 바꾸면 환급이 약 ${f((r.am.신용-r.thr)*.15*r.mr*1.1)} 늘어납니다.</div>`;
+if(r.pen<900)tips+=`<div class="mu">${n}: 연금저축·IRP를 연 900만 원까지 채우면 세액공제가 약 ${f(900*(r.S<=5500?.165:.132))}입니다(전망 ${f(r.pc)}). 연금계좌는 중도 인출 시 불이익이 있습니다.</div>`;
+if(r.rent>0&&r.head!="예")tips+=`<div class="mu">${n}: 세대주가 아니라 월세 공제에서 제외됐습니다(기본정보에서 세대주를 확인).</div>`;
+if(r.rent>0&&r.S>8000)tips+=`<div class="mu">${n}: 총급여 8천만 원 초과라 월세 공제 대상이 아닙니다. 계약·세대주를 총급여가 낮은 쪽으로 두는 것이 유리합니다.</div>`});
+if(tips)h+=`<div style="margin-top:8px">${tips}</div>`;
+h+=`<h3 style="margin:14px 0 4px">ISA 절세 효과 (계획 기준, 수익률 ${gv("ri",4)}%)</h3><div class="w"><table><tr><th></th>${[0,1].map(i=>`<th class="r gs">${esc(txName(i))}</th>`).join("")}</tr>${[["월 납입",r=>won(r.I.m)],["유지 기간",r=>r.I.n/12+"년"],["총 납입",r=>won(r.I.pr)],["예상 평가액",r=>won(r.I.fv)],["수익",r=>won(r.I.pf)],["비과세 한도 (총급여 5천 이하 서민형 400만, 그 외 200만)",r=>won(r.I.ex)],["ISA 세금 (초과분 9.9%)",r=>won(r.I.t1)],["일반계좌 세금 (15.4%)",r=>won(r.I.t2)],["<b>ISA 절세액</b>",r=>"<b>"+won(r.I.t2-r.I.t1)+"</b>"]].map(([l,g])=>`<tr><td>${l}</td>${RP.map(r=>`<td class="r gs">${r.I.m?g(r):"–"}</td>`).join("")}</tr>`).join("")}</table></div>`;
+const wn=RP.map((r,i)=>r.I.m*12>20000000?esc(txName(i))+"의 연 납입이 2,000만 원을 넘습니다(미납입 한도 이월분 확인). ":"").join("");
+h+=`<div class="mu" style="margin-top:6px">${wn}ISA 비과세·9.9% 분리과세는 해지(만기) 시 정산되므로 환급액에는 더하지 않았고, 의무기간(3년) 전 해지하면 혜택이 사라집니다. 국내주식형 ETF의 매매차익은 일반계좌에서도 비과세라 그 비중이 크면 절세액이 과대 계산됩니다. ISA 만기 후 연금계좌 이전 공제는 이전액의 10%(최대 300만 원)로 계산했으며 적용 요건은 확실하지 않으니 신고 전에 확인해 주세요. 수익률은 위 ‘ISA 수익률 가정’ 값을 씁니다.</div>`;
+e.innerHTML=h}
+/* ---------- tabs / events ---------- */
+function draw(){$("tabs").innerHTML=[["mo","✍️ 월별 기록"],["as","🏠 자산현황"],["tx","🧾 연말정산 시뮬레이터"],["sm","🏦 주담대 시뮬레이터"],["cf","⚙️ 설정"]].map(([k,l])=>`<button class="${TAB==k?"on":""}" onclick="TAB='${k}';draw()">${l}</button>`).join("");
+({mo:drawMo,as:drawAs,tx:drawTx,sm:drawSm,cf:drawCf})[TAB]()}
+function refreshSel(){document.querySelectorAll("select[data-o]").forEach(s=>{if(!OS[s.dataset.o])return;const v=s.value;s.innerHTML=opt(OS[s.dataset.o](),v)})}
+function fmtI(el){const s=el.selectionStart,d=el.value.slice(0,s).replace(/\D/g,"").length,n=el.value.replace(/\D/g,"");el.value=n?(+n).toLocaleString("ko-KR"):"";let c=0,q=0;for(;q<el.value.length&&c<d;q++)if(/\d/.test(el.value[q]))c++;try{el.setSelectionRange(q,q)}catch(e){}}
+function onEd(e){const t=e.target,s=t.dataset.s;if(!s)return;let v=t.value;if(t.dataset.m){if(e.type=="input")fmtI(t);v=+t.value.replace(/,/g,"")||""}else if(t.dataset.n)v=v===""?"":+v;
+const k=t.dataset.k,i=t.dataset.i;
+if(s=="plm"){if(v)PLM=clamp(v);drawMo();return}
+if(s=="pl"){plRows()[i][k]=v;sched("p"+PLM);updPl();return}
+if(s=="plan"){D.sim.plan[k]=v===""?0:v;sched("cfg");updSm();return}
+if(s=="tx"){M[MON][i][k]=v;sched(MON);if(k=="c"&&!subsFor(v).includes(M[MON][i].s))M[MON][i].s="";if(e.type=="change"&&(k=="k"||k=="a"||k=="to"||k=="c"))drawMo();else updMo();return}
+if(s=="lists")D.lists[k]=v;else if(s=="goal")D.goal[k]=v;else D[s][i][k]=v;
+if(s=="accts"&&k=="name"&&v&&!D.accts[i].id)D.accts[i].id="a"+(D.n++);
+sched("cfg");if(e.type=="change"&&(s=="accts"||s=="basic"||s=="lists"))refreshSel();if(s=="accts")sums();if(TAB=="sm")updSm();if(TAB=="tx")updTx()}
+document.addEventListener("input",onEd);document.addEventListener("change",onEd);
+const cfS=()=>{sched("cfg");draw()};
+function addR(s){D[s].push({});cfS()}function insR(s,i){D[s].splice(i+1,0,{});cfS()}
+function delR(s,i){const r=D[s][i];if(s=="accts"&&r.id&&Object.values(M).some(a=>a.some(t=>t.a==r.id||t.to==r.id))){setSt("⚠️ 거래가 있는 계정은 삭제할 수 없습니다 (‘사용’을 N으로 바꾸세요)");return}D[s].splice(i,1);if(!D[s].length)D[s].push({});cfS()}
+function fillCats(){D.cats=D.cats.filter(r=>Object.keys(r).length);CATS.forEach(r=>(r[3]=="명의별"?[""]:r[3].split(",").map(x=>x.trim())).forEach(sm=>D.cats.push({kind:r[0],grp:r[1],big:r[2],small:sm})));const f=D.cats.find(r=>r.big=="금융비용");if(f)f.memo="할부수수료는 거래에서 결제구분 ‘할부수수료’로 지정";cfS()}
+/* ---------- export / reset ---------- */
+const BK="hf3_bk";
+function backupNote(){try{const t=localStorage.getItem(BK);if(!t)return" · ⚠️ 백업 없음";const d=Math.floor((Date.now()-new Date(t))/864e5);return d>=14?" · ⚠️ 마지막 백업 "+d+"일 전":" · 마지막 백업 "+(d<1?"오늘":d+"일 전")}catch(e){return""}}
+async function saveFile(name,blob,type){const f=new File([blob],name,{type});
+if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:name});return true}catch(e){if(e&&e.name=="AbortError")return false}}
+const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);return true}
+async function doBackup(){const o={app:"hf3",v:1,at:new Date().toISOString(),data:{cfg:D,M,PM}},ok=await saveFile("가계부_백업_"+new Date().toISOString().slice(0,10)+".json",new Blob([JSON.stringify(o)],{type:"application/json"}),"application/json");if(ok){try{localStorage.setItem(BK,new Date().toISOString())}catch(e){}setSt("백업 저장 완료"+backupNote())}}
+function doRestore(el){const f=el.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result),d=o.data||o;if(!d.cfg||!d.cfg.accts)throw 0;if(!confirm("현재 앱의 데이터를 백업 파일 내용으로 바꿉니다. 계속할까요?"))return;localStorage.setItem("hf3",JSON.stringify({cfg:d.cfg,M:d.M||{},PM:d.PM||{}}));location.reload()}catch(e){setSt("올바른 백업 파일이 아닙니다")}};r.readAsText(f);el.value=""}
+async function doCsv(){const nm=id=>(byId(id)||{}).name||"",q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"',rows=[["날짜","구분","계정","분류","소분류","내용","결제구분","금액","상대계정","메모"]];
+Object.keys(M).sort().forEach(k=>M[k].forEach(t=>rows.push([t.d,t.k,nm(t.a),t.c,t.s,t.t,t.k=="지출"?(t.p||"일시불"):"",t.m,nm(t.to),t.n])));
+await saveFile("가계부_거래_"+new Date().toISOString().slice(0,10)+".csv",new Blob(["\ufeff"+rows.map(r=>r.map(q).join(",")).join("\r\n")],{type:"text/csv"}),"text/csv");setSt("CSV 저장 완료")}
+let rsT=0;function doReset(){const b=$("rs");if(!rsT){rsT=1;b.textContent="⚠️ 한 번 더 누르면 모두 지워집니다";setTimeout(()=>{rsT=0;b.textContent="🗑 전체 비우기"},4000);return}
+Object.keys(M).forEach(k=>{M[k]=[];sched(k)});Object.keys(PM).forEach(k=>{PM[k]={};sched("p"+k)});D=DEFC();sched("cfg");draw();rsT=0;b.textContent="🗑 전체 비우기"}
+boot();
+</script></body></html>
